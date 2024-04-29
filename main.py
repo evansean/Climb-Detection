@@ -1,3 +1,10 @@
+"""
+Module/Script Name: Rule-Based Climbing Detection using RTMO
+
+Author: Evan Sean Sainani
+Date: 29th April 2024
+"""
+
 import torch, torchvision
 import numpy as np
 import cv2
@@ -27,7 +34,23 @@ climbArea = np.array([[1092, 396], [862, 697], [1072, 723], [1185, 418]], np.int
 # climbArea = np.array([[464, 258], [540, 271] ,[521, 317], [448, 295]], np.int32) # grass area coordinates
 
 
+
+'''
+
+'''
 def detectClimb(keypoint, keypoint_scores, kp_name, kpt_thr):
+    """
+    Given an ROI and a point p, find if p lies inside the ROI or not. The points lying on the border are considered inside.
+
+    Args:
+        keypoint (float): Keypoint of a predicted instance
+        keypoint_scores (float): Keypoint confidence score 
+        kp_name (string): Name of the keypoint
+        kpt_thr (float): Threshold for the keypoint confidence score, keypoint confidences above this threshold will be checked if they lie in ROI
+
+    Returns:
+        Bool: If keypoint lies in the ROI
+    """
     inside = False
     if keypoint_scores > kpt_thr:
         num_vertices = len(climbArea)
@@ -49,7 +72,8 @@ def detectClimb(keypoint, keypoint_scores, kp_name, kpt_thr):
             print(f'{kp_name} detected in ROI with confidence of {keypoint_scores}')
             cv2.putText(frame_vis, f'{kp_name} detected in ROI {keypoint_scores:.3f}%', (45, 410), cv2.FONT_HERSHEY_SIMPLEX, 3, (0,0,255), 2)
     return inside
-# (70, 662)
+
+
 # Check if GPU is available
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -62,19 +86,6 @@ deploy_cfg = '/root/workspace/mmdeploy/configs/mmpose/pose-detection_rtmo_tensor
 model_cfg = '/root/workspace/mmdeploy/rtmo-l_16xb16-600e_coco-640x640.py'
 device = 'cuda:0'
 backend_model = ['/root/workspace/mmdeploy/mmdeploy_models/mmpose/trt-rtmo/end2end.engine']
-
-# RTMO ONNXRUNTIME
-# deploy_cfg = '/root/workspace/mmdeploy/configs/mmpose/pose-detection_onnxruntime-fp16_static.py'
-# model_cfg = '/root/workspace/mmdeploy/rtmo-l_16xb16-600e_coco-640x640.py'
-# device = 'cpu'
-# backend_model = ['/root/workspace/mmdeploy/mmdeploy_models/mmpose/ort-rtmo/end2end.onnx']
-
-# yoloxpose TENSORRT
-# deploy_cfg = '/root/workspace/mmdeploy/configs/mmpose/pose-detection_yolox-pose_tensorrt_dynamic-640x640.py'
-# model_cfg = '/root/workspace/mmdeploy/yoloxpose_l_8xb32-300e_coco-640.py'
-# device = 'cuda:0'
-# backend_model = ['/root/workspace/mmdeploy/mmdeploy_models/mmpose/trt-yolox/end2end.engine']
-
 
 # read deploy_cfg and model_cfg
 deploy_cfg, model_cfg = load_config(deploy_cfg, model_cfg)
@@ -116,13 +127,11 @@ total_processing_time = 0
 prev_time = time.time()
 cv2.namedWindow("Human Pose Estimation", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Human Pose Estimation ", videoWidth, videoHeight)
-knees_idx = [14, 13] 
-feet_idx = [15, 16]
-idx = [14, 16, 13, 15]  # Index of knees and feet.
 climbing = None
 climbFlag = "Not detected"
 climbCount = 0
 instanceIdx=0
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -146,22 +155,22 @@ while cap.isOpened():
     frame_vis = mmcv.rgb2bgr(frame_result)
 
     # if any of the knees are in the ROI, check if any of the feet are in the ROI. if true then climbing is detected. ** UPDATED RULE
-    # for k in range(len(keypoints)):
-    #     if (detectClimb(keypoints[k][13],keypoint_scores[k][13],"Left knee", 0.98) or detectClimb(keypoints[k][14], keypoint_scores[k][14], "Right knee", 0.98)):
-    #             if (detectClimb(keypoints[k][15],keypoint_scores[k][15], "Left foot", 0.975) or detectClimb(keypoints[k][16], keypoint_scores[k][16], "Right foot",0.975)):
-    #                 climbing = True
-    #                 instanceIdx = k
-    #                 break
+    for k in range(len(keypoints)):
+        if (detectClimb(keypoints[k][13],keypoint_scores[k][13],"Left knee", 0.98) or detectClimb(keypoints[k][14], keypoint_scores[k][14], "Right knee", 0.98)):
+                if (detectClimb(keypoints[k][15],keypoint_scores[k][15], "Left foot", 0.975) or detectClimb(keypoints[k][16], keypoint_scores[k][16], "Right foot",0.975)):
+                    climbing = True
+                    instanceIdx = k
+                    break
 
     # if any of the knees or feet are in the ROI, determine as a climb ** INITIAL RULE
-    for k in range(len(keypoints)):
-        for i in idx:         
-            climbing = detectClimb(keypoints[k][i],keypoint_scores[k][i], coco_keypoints[i], 0)
-            if climbing:
-                instanceIdx = k
-                break
-        if climbing:
-            break
+    # for k in range(len(keypoints)):
+    #     for i in idx:         
+    #         climbing = detectClimb(keypoints[k][i],keypoint_scores[k][i], coco_keypoints[i], 0)
+    #         if climbing:
+    #             instanceIdx = k
+    #             break
+    #     if climbing:
+    #         break
 
     if climbing:
         climbFlag = "Detected!"
@@ -169,10 +178,10 @@ while cap.isOpened():
         print(f'Climb count increased to {climbCount}')
         color = (0, 0, 255)
         # left angle
-        cv2.putText(frame_vis, f'LK {keypoint_scores[instanceIdx][13]:.3f}%', (1290, 102), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
-        cv2.putText(frame_vis, f'RK {keypoint_scores[instanceIdx][14]:.3f}%', (1290, 181), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
-        cv2.putText(frame_vis, f'LF {keypoint_scores[instanceIdx][15]:.3f}%', (1290, 260), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
-        cv2.putText(frame_vis, f'RF {keypoint_scores[instanceIdx][16]:.3f}%', (1290, 340), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
+        # cv2.putText(frame_vis, f'LK {keypoint_scores[instanceIdx][13]:.3f}%', (1290, 102), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
+        # cv2.putText(frame_vis, f'RK {keypoint_scores[instanceIdx][14]:.3f}%', (1290, 181), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
+        # cv2.putText(frame_vis, f'LF {keypoint_scores[instanceIdx][15]:.3f}%', (1290, 260), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
+        # cv2.putText(frame_vis, f'RF {keypoint_scores[instanceIdx][16]:.3f}%', (1290, 340), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 2)
 
         # alt right angle 
         # cv2.putText(frame_vis, f'LK {keypoint_scores[instanceIdx][13]:.3f}%', (70, 662), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 2)
@@ -184,7 +193,6 @@ while cap.isOpened():
     else:
         climbFlag = "Not Detected"
         color = (0, 255, 0)
-    # print(keypoints)
 
 
     #processing_time = time.time() - curTime
@@ -198,14 +206,11 @@ while cap.isOpened():
     # Display frame with FPS 
     fps = 1 / (time.time() - prev_time)
     # print(f"FPS: {fps}")
-    # cv2.putText(frame_vis, f'Climb {climbFlag}', (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 3)
+    # cv2.putText(frame_vis, f'FPS: {fps}', (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 3)
 
     # out.write(frame_vis)
     cv2.imshow("Human Pose Estimation", frame_vis)
-    # if climbing:
-    #     cv2.waitKey()
 
- #get avg
     prev_time = time.time()
 
     if cv2.waitKey(10) & 0xFF == ord('x'):
